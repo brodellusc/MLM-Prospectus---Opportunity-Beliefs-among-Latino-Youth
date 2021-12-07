@@ -1,0 +1,676 @@
+---
+title: "Prospectus" 
+author: "Regina Brodell"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r}
+library(haven)  # for importing SPSS/SAS/Stata data
+library(here)  # makes reading data more consistent and needed to import my data
+library(psych)  # for scatterplot matrix
+library(lme4)  # for multilevel analysis
+library(lavaan) #for factor analysis 
+library(here)  # makes reading data more consistent
+library(tidyverse)  # for data manipulation and plotting
+library(brms)  # for Bayesian multilevel analysis
+library(lattice)  # for dotplot (working with lme4)
+library(sjPlot)  # for plotting effects
+library(broom.mixed)  # for summarizing results
+library(modelsummary)  # for making tables
+library(lme4)
+library(loadr)
+library(here)
+library(hereR)
+library(interactions)
+library(estimatr)
+library(glmmTMB)
+library(ggplot2)
+library(tibble)
+library(readr)
+library(purrr)
+library(dplyr)
+library(stringr)
+library(forcats)
+library(haven) # read spss data 
+library(lmerTest)
+
+```
+
+## Load Data (THIS IS CHECKING ONLY THE 42 ITMES ON THE SCALE)
+## OBS12 DATA SET = ONLY THE OPPORTUNITY BELIEFS SCALE ITEMS FOR SIMPLICITY IMPORTED FROM SPSS
+```{r import data}
+library(foreign)
+OBS12<- read_sav(here("data_files", "OBS12.sav"))
+OBS12
+```
+
+
+# ASSUMPTIONS
+## Descriptives: Check Item Normality and Sample Size
+```{r assumptions}
+library(psych)
+describe(OBS12)
+# Checking kurtosis and skew. -0.8 to 0.8 for skewness and -3.0 to 3.0 for kurtosis is usually acceptable for normal distribution. Some items may be problematic but most items meet the acceptable values. 
+view(OBS12)
+```
+# I am not making any decisions here. I am just evaulating the 42 items and assessing what the data might look like. I am multiplying the sd by 2 and then subtracting/adding from the mean which should give me 95% of the distribution of responses (if I have a normal distribution). 
+
+# Explore the Data  
+```{r}
+# sample size
+nrow(OBS12)
+head(OBS12)
+dim(OBS12)
+names(OBS12)
+```
+
+### Visualize as Heatmap
+```{r}
+?cor.plot #see options
+cor.plot(OBS12, numbers=FALSE) 
+cor.plot(OBS12, numbers=TRUE) #with r's shown, with LARGE plot space
+```
+
+#MCAR Missing Data 
+The Little’s MCAR’s Null Hypothesis: Data is completely missing at random.
+
+```{r mcar}
+install.packages("naniar")
+library(naniar)
+library(ggplot2)
+head(OBS12)
+as_shadow(OBS12)
+mcar_test(OBS12)
+gg_miss_upset(OBS12)
+miss_var_summary(OBS12)
+```
+# My initial results showed that I needed to go back and look at my data and reevulate what I will do with the missing cases. The pvalue tells me that the missing data is not missing at random. So I went back to SPSS to look at the data again
+
+##With new data set OBS12 (I dropped all the data that was less than 3 standard deviations). Now with rerunning MCAR I see that the pvalue is not statistically significant which means that the data is missing completely at random.  
+
+#Interpretation: pvalue is greater than 0.05, therefore there’s no statistical significance. This means that I accept the null hypothesis that the “data is completely missing at random”.
+
+
+# Visualize the missing data
+```{r}
+# Now let's use MICE. This will give me a visual representation of my missing data
+install.packages("mice")
+library(mice)
+md.pattern(OBS12)
+library(VIM)
+mice_plot <- aggr(OBS12, col=c('navyblue','yellow'),
+                    numbers=TRUE, sortVars=TRUE,
+                    labels=names(OBS12), cex.axis=.7,
+                    gap=3, ylab=c("Missing data","Pattern"))
+```
+
+# Check for number of complete and missing cases 
+```{r}
+sum(complete.cases(OBS12))
+#Missing values and percentages by column
+## Usually a safe maximum threshold is 5% of the total for large datasets. If missing data for a certain feature or sample is more than 5% then you probably should leave that feature or sample out. We therefore check for features (columns) and samples (rows) where more than 5% of the data is missing using a simple function
+colSums(is.na(OBS12))  # Count missing values by column
+colSums(is.na(OBS12)) / nrow(OBS12) # Percentage of missing values by column
+# Looks like missing data is below the threshold
+```
+
+## Load Data [use non imputed data and all the variables so switching to newOBS08 data set now]
+
+```{r import data}
+library(foreign)
+newOBS08 <- read_sav(here("data_files", "newOBS08.sav"))
+newOBS08
+view(newOBS08)
+```
+
+
+################# Confirmatory Factor Analysis ###################
+
+#Confirmatory Factor Analysis 
+Check the Assumptions:
+-	The assumptions of a CFA include multivariate normality
+-	a sufficient sample size (n >200), 
+-	the correct a priori model specification, and data must come from a random sample.
+
+Model Fit Statistics
+
+The three main model fit indices in CFA are:
+
+Model chi-square this is the chi-square statistic we obtain from the maximum likelihood statistic (similar to the EFA)
+CFI is the comparative fit index – values can range between 0 and 1 (values greater than 0.90, conservatively 0.95 indicate good fit)
+RMSEA is the root mean square error of approximation (values of 0.01, 0.05 and 0.08 indicate excellent, good and mediocre fit respectively, some go up to 0.10 for mediocre).
+
+
+```{r}
+library(lavaan)
+library(car) 
+library(semPlot) 
+library(psych) 
+library(knitr) 
+library(kableExtra)
+library(MVN) 
+library(dplyr) 
+library(magrittr) 
+library(tidyr) 
+library(corrplot) 
+library(ggraph)
+```
+
+################# 5 FACTOR MODEL NO ADJUSTMENTS##################
+# 5 Factor Model NO ADJUSTMENTS
+```{r items and factors}
+#Defining the Model by the Path - I am telling R that these are the items to put into the factors. 
+path <- '
+TSB =~ atbe1 + atbe6 + atbe8 + atbe9 + atbe13 + atbe2 + atbe3 + atbe4 + atbe5 + atbe7 + atbe10
+DF =~  atbe11 + atbe14 + atbe15 + atbe17 + atbe12 + atbe16 + atbe18
+EO =~ atbe19 + atbe20 + atbe21 + atbe35 + atbe22 + atbe25
+AE =~ atbe26 + atbe27 + atbe29 + atbe32 + atbe36 + atbe23 + atbe24 + atbe28 + atbe30 + atbe31 + atbe33 + atbe34
+OC =~ atbe37 + atbe38 + atbe40 + atbe39 + atbe41 + atbe42
+'
+```
+#CFI = 0.551
+#RMSEA = 0.069
+
+##Fit the model from this data set. 
+```{r}
+model <- cfa(path, data= newOBS08, missing="ml")
+summary(model, fit.measures=TRUE)
+```
+
+
+###################### 4 FACTOR MODEL WITH SIMPLY REMOVING FACTOR 1 (TEMPORARY SOCIAL BARRIERS)##############
+```{r items and factors}
+#Defining the Model by the Path - I am telling R that these are the items to put into the factors. 
+path <- '
+DF =~  atbe11 + atbe14 + atbe15 + atbe17 + atbe12 + atbe16 + atbe18
+EO =~ atbe19 + atbe20 + atbe21 + atbe35 + atbe22 + atbe25
+AE =~ atbe26 + atbe27 + atbe29 + atbe32 + atbe36 + atbe23 + atbe24 + atbe28 + atbe30 + atbe31 + atbe33 + atbe34
+OC =~ atbe37 + atbe38 + atbe40 + atbe39 + atbe41 + atbe42
+'
+```
+#CFI = 0.654
+#RMSEA = 0.069
+
+##Fit the model from this data set. 
+```{r}
+model <- cfa(path, data= newOBS08, missing="ml")
+summary(model, fit.measures=TRUE)
+```
+
+#Complete parameter listing
+```{r listing}
+parameterEstimates(model, standardized=TRUE) %>%
+filter(op == "=~") %>%
+  select('Latent Factor'=lhs, Indicator=rhs, B=est, SE=se, Z=z, 'p-value'=pvalue, Beta=std.all) %>%
+         knitr::kable(digits = 3, booktabs=TRUE, format="markdown", caption="Factor Loadings")
+```
+
+#Factor Scores 
+```{r}
+lavPredict(model) # This will give us the factor scores
+```
+
+#Visualize the Model 
+```{r}
+semPaths(model, "par", weighted = FALSE, nCharNodes = 7, shapeMan = "rectangle",
+         sizeMan = 8, sizeMan2 = 5)
+```
+
+#The value sampstat of this argument stands for “sample statistics”, the empirical variance-covariance matrix:
+```{r}
+lavInspect(model, what = "sampstat")
+```
+
+#The variance-covariance matrix implied by the model
+```{r}
+lavInspect(model, what = "implied")
+```
+# The smaller the differences between these two matrices, the better the model fits the data, i.e. the closer the variances and covariances recalculated from the estimated parameters are to the empirical variances and covariances.
+
+#The residual matrix results from the subtraction of the variance-covariance matrix implied by the model from the observed (empirical) variance-covariance matrix.
+
+```{r}
+residual_matrix <- 
+  lavInspect(model, what = "sampstat")$cov - 
+  lavInspect(model, what = "implied")$cov
+residual_matrix
+```
+
+Are there demographic differences in opportunity beliefs? I hypothesize multilevel modeling will reveal that opportunity beliefs among a sample of high school students will differ based on generational status. 
+
+########CLEAN UP DATA AND DETERMINE WHETHER ETHNICITY OR COUNTRY OF ORIGIN HAS HIGHER ICC ##################
+*** Whichever has higher ICC use as level 2 clustered variable ***
+
+
+```{r load-pkg, message=FALSE}
+library(here)  # makes reading data more consistent
+library(tidyverse)  # for data manipulation and plotting
+library(haven)  # for importing SPSS/SAS/Stata data
+library(glmmTMB)  # for multilevel logistic models
+library(lme4)  # also for multilevel logistic models
+library(sjPlot)  # for plotting
+library(MuMIn)  # for R^2
+library(modelsummary)  # for making tables
+theme_set(theme_bw())  # Theme; just my personal preference
+```
+
+```{r helpers, include = FALSE}
+# For printing coefficients
+comma <- function(x, d = 3) format(x, digits = d, big.mark = ",")
+print_p <- function(x, d = 3) {
+  if (x >= .001) {
+    return(
+      paste("*p* =", sub("^0+", "", format(round(x, d), nsmall = d)))
+    )
+  } else {
+    return("*p* < .001")
+  }
+}
+```
+
+########CLEAN UP DATA FOR COUNTRY OF ORIGIN  ##################
+
+#Clean up Data for Country ("countkid")
+
+##I have 57 different entered responses for this variable. I need to reduce these down to 7 categories (based this off the number of different countries entered/reported). 
+
+1. Run frequencies in countkid (Analyze - Descriptive Statistics - Frequencies - Select Display Frequency tables).
+
+FREQUENCIES VARIABLES=countkid 
+  /ORDER=ANALYSIS.
+
+# Frequency table revealed three "99"cases, one "88" case, and the following cases "AM," "amereca cala," "yes," "I don't remember." - Total of 8 cases that need to be recoded as missing data. 
+
+2. Create a new column and label as "newcountkid."
+
+# Create a new variable for countkid since I need to recode several cases. 
+
+SPSS Code:
+RECODE countkid ("'America'"=1) INTO newcountkid. 
+VARIABLE LABELS  newcountkid 'Country subject born'. 
+EXECUTE. 
+FREQUENCIES VARIABLES=newcountkid 
+  /ORDER=ANALYSIS.
+
+3. Recode cases from STEP 1 to missing data. Recoded 8 cases=SYSMIS, therefore my sample size dropped from 375 to 366 (8 recoded cases + 1 missing case read by SPSS) for this analysis. 
+
+# See SPSS output
+
+4. Recode United States. Reduce all the different iterations (e.g., America, CA LA, California, Indio Riverside, LA California, Los Angelos, U.S.A., United States of America, Burbank, California, En Estados Unidos, L.A., Los Angeles, United States, US, C.A., California (USA) etc) 
+
+# See SPSS output
+
+5. Recode El Salvador. Reduce all the different iterations (e.g., En El Salvador, Salzadoran, El Salvador, En el salvador, En el Salvador, Salvador)
+
+# See SPSS output
+
+6. Recode Mexico. Reduce all the different iterations (e.g., Guadalajara, Guadalajara Jalisco, Mexico, Oaxaca, En Mexico, Guadalajora Jal Mexico, Mexico D.F., Mexico Toluca) 
+
+# See SPSS output 
+
+7. Recode Guatemala. Reduce all the different iterations (e.g., Guatamala)
+
+# See SPSS output 
+
+8. Dominican Republic. Reduce all the different iterations (e.g., Republica Dominicana)
+
+# See SPSS output 
+
+9. Assign values to newcountkid. 
+
+#1 = United States; 2= El Salvador; 3= Mexico; 4= Guatemala; 5=Honduras; 6=Nicaragua; Dominican Republic=7 
+
+
+########ATTEMPT TO CLEAN UP IN R ##################
+
+I will want to create a new column and populate it using if statements. 
+```{r country}
+#library(tidyverse)
+#newOBS08 <- newOBS08 %>%
+    mutate(
+        newcountry = case_when(
+            countkid %in% c("America","CA LA" ,"California'" , "Indio Riverside" , "LA California" , "Los Angelos" , "U.S.A" , "United States of America" , "Burbank" , "California" , "En Estados Unidos" , "L.A." , "Los Angeles" , "United States" , "US" , "C.A." , "California (USA)" , "L.A." , "U.S.A." , "Los Angeles CA," , "U.S." , "United States" , "usa" , "CA" , "California/U.S." , "Estados Unidos" , "in USA" , "LA" , "Los Angeles CA" , "U.S.A." , "UNited States" , "USA" , "Unite States") ~ "United States",
+            countkid %in% c("En El Salvador, Salzadoran, El Salvador, En el salvador, En el Salvador, Salvador") ~ "El Salvador",
+            countkid %in% c("Guadalajara, Guadalajara Jalisco, Mexico, Oaxaca, En Mexico, Guadalajora Jal Mexico, Mexico D.F., Mexico Toluca") ~ "Mexico",
+            countkid %in% c("Guatamala") ~ "Guatemala",
+            countkid %in% c("Republica Dominicana") ~ "Dominican Republic",
+            countkid %in% c(88, 99, "AM", "amareca cala", "I don't remember") ~ NA_character_ ))
+
+```
+
+# Cross-tabulate - ("countkid")
+```{r new countkid dat}
+#table(newOBS08$countkid)
+# Cross-tabulate
+#table(newOBS08$countkid, newOBS08m$newcountry)    
+#table(newOBS08$newcountry)
+#view(newOBS08)
+```
+
+########ETHNILAT CLEANUP IN SPSS ##################
+
+
+#Clean up Data for Ethnicity ("ethnilat")
+
+##I have 6 different entered responses for this variable. I need to reduce these down to 4 categories (based this off the number of different ethnicities entered/reported). 
+
+1. Run frequencies in "ethnilat" (Analyze - Descriptive Statistics - Frequencies - Select Display Frequency tables).
+
+# Frequency table revealed two cases of "3" and one "77" case - Total of 3 cases that need to be recoded as SYSMIS. In R, table showed two "2.5" cases and one 77 -  However SPSS was not showing the value of 2.5 in the frequency table. I figured it was reading that case as a "3" by rounding it up from 2.5. Recoded 2.5 and 77 as SYSMIS and it resolved the problem. Sample size went from 358 to 355. 
+
+SORT CASES BY ethnilat(A). 
+RECODE ethnilat (2.5=SYSMIS) (77=SYSMIS). 
+EXECUTE.  
+FREQUENCIES VARIABLES=ethnilat 
+
+  /ORDER=ANALYSIS.
+
+########ATTEMPT TO CLEAN UP IN R ##################
+
+#Clean up Data for Ethnicity - ("Ethnilat")
+```{r ethnicity}
+library(tidyverse)
+library(dplyr)
+#newOBS08 <- newOBS08 %>%
+    mutate(
+        newethnilat = case_when(
+            ethnilat %in% c(77, 2.5) ~ NA_integer_ ))
+```
+
+### New Attempt of Cleaning "Ethnilat" Variable
+```{r ethnilat}
+#newOBS08$newethnilat <- if_else(newOBS08$ethnilat %in% c(77, 2.5), NA_real_, as.numeric(newOBS08$ethnilat))
+
+#newOBS08$newcountry <- if_else(newOBS08$ethnilat %in% c(77, 2.5), NA_real_, as.numeric(newOBS08$ethnilat))
+```
+
+# Cross-tabulate - "Ethnilat"
+```{r new ethnilat}
+#table(newOBS08$ethnilat)
+# Cross-tabulate
+#table(newOBS08$ethnilat, newOBS08$newethnilat)  
+#view(newOBS08)
+```
+
+#"Ethnilat" Cluster Size 
+
+```{r Clusters size}
+#Ethnicity 
+table(newOBS08$ethnilat) #List of ethnicity and their sizes
+length(table(newOBS08$ethnilat)) # No. of ethnicity clusters
+min(table(newOBS08$ethnilat)) # Size of smallest ethnicity  cluster size
+max(table(newOBS08$ethnilat)) # Size of largest ethnicity  cluster size
+```
+
+########ASSUMPTIONS with NEW VARIABLES ######################################################
+# ASSUMPTIONS with NEW VARIABLES
+## Consider Applicable Regression Assumptions
+### Examine OBS score outcome by gen status group and ethnicity 
+```{r}
+library(pastecs)
+by(newOBS08$index1, newOBS08$genstatus, stat.desc)
+by(newOBS08$index1, newOBS08$ethnilat, stat.desc)
+```
+
+########MLM ######################################################
+
+### Model Equations
+
+Lv-1: within (genstatus)
+$$\text{OBS}_{ij} = \beta_{0j} + \beta_{1j} \text{genstatus}_{ij} + e_{ij}$$
+Lv-2:between ethnic groups 
+$$\beta_{0j} = \gamma_{00} + u_{0i}$$
+Lv-2:between ethnic groups 
+$$\beta_{1j} = \gamma_{10} + u_{1j}$$
+Lv-2:between ethnic groups 
+$$\beta_{2j} = \gamma_{20} + u_{2j}$$
+Lv-2:between ethnic groups 
+$$\beta_{3j} = \gamma_{30} + u_{3j}$$
+#Combined Model
+Lv-1: within (genstatus) nested in ethnicity cluster
+$$\text{OBS}_{ij} = \gamma_{00} + \beta_{0j}+\beta_{1j} \text{genstatus}_{ij} + e_{ij} + u_{oj}$$
+### PREPARE FOR MLM ####
+
+## Peek at Fixed Effects in Regression Model
+```{r}
+reg <- lm(index1 ~ genstatus, newOBS08)
+summary.lm(reg)
+```
+
+# BUILD MLM TO ACCOUNT FOR Ethnicity differences
+## Start with Fixed Effects Model 
+### Use gls() function (to get ML estimation) in nlme package
+#####install.packages("nlme")
+
+```{r}
+library(nlme)
+fixed <- gls(index1 ~ genstatus, 
+             data = newOBS08, method = 'ML') #ML for maximum likelihood
+summary(fixed)
+
+```
+
+## Add Random Intercept 
+### Use lme() function in nlme package
+### Use maximum likelihood estimation (ML), but could also use REML
+### Use random ~1 for intercept and indicate nesting variable (ethnicity) after |
+
+```{r}
+Rint <- lme(index1 ~ genstatus, data = newOBS08, 
+             na.action = na.exclude, 
+            random =~1 | ethnilat, method = 'ML') 
+summary(Rint) #AIC decreases, so better model than fixed effects only
+VarCorr(Rint) #request unstandardized variances of random effects
+
+```
+
+## Add Random Slope for Genstatus
+### Default error structure is unstructured (or variant thereof)
+### When add random slope, random intercept is automatically estimated
+```{r}
+Rintsl_un <- lme(index1 ~ genstatus, data = newOBS08, 
+              na.action = na.exclude, 
+              random = ~genstatus | ethnilat, method = 'ML')
+summary(Rintsl_un) #AIC decreases, so better model than random intercepts only
+anova(Rint, Rintsl_un) #confirmed with likelihood ratio test
+VarCorr(Rintsl_un) #request unstandardized variances of random effects
+```
+### Estimate model-predicted values for further analysis
+```{r}
+newOBS08$pred <- predict(Rintsl_un)
+```
+
+### Plot observed and model-predicted values by ethnicity
+```{r}
+#pgrid <- ggplot(newOBS08, aes(index1, pred)) 
+#pgrid + geom_point(aes(colour = genstatus)) + geom_smooth(aes(colour = genstatus), 
+#method = "lm", se = F) + facet_wrap(~ ethnilat, ncol = 5) 
+```
+
+###################### NOTES FOR ICC AND MODELS#############
+
+####ICC
+#See SPSS ICC Calculations
+
+Step 1: Unconditional model. The first step in conducting multilevel modelling is to
+make sure mutlilevel modelling is appropriate in the first place. This is done through testing an
+“unconditional model” (also called an “intercept only” model). In the unconditional model, only
+the dependent variable and the grouping variable(s) are entered. No predictors
+are entered, thus the model is not “conditioned” upon any predictor variables and that's why you put a 1. 
+
+If pvalue is < 0.5 the model can be interpreted as showing significant between-participant variation and thus supporting the use of multilevel modeling. 
+
+Specifies that level-1 observations are grouped by the level-2 variable.
+
+#Table of Descriptive Statistics 
+```{r}
+library(stargazer)
+newOBS08 %>% 
+  dplyr::select(age, gender, grade, index1, newcountkid, ethnilat) %>% 
+  data.frame() %>% 
+  stargazer::stargazer(header = FALSE,
+                      title = "Summary of the numeric variables with `stargazer`",
+                       type = "text")
+```
+
+#No predictors. This is the unconditional model. 1 is entered in the place of the predictor. 
+```{r unconditional}
+model<-lmer(index1 ~ 1 +(1|ethnilat),data=newOBS08)
+summary(model)         
+```
+# Level 1 Effects with adding in predictor
+```{r fixed lev}
+model<-lmer(index1 ~ genstatus +(1|ethnilat),data=newOBS08)
+summary(model)
+msummary(model)
+# Gen status is a significant differentiator for the OBS score (index1). 
+```
+
+# Level 1 Plot - Disaggregate 
+```{r}
+newOBS08 %>% 
+  ggplot() +
+  aes(x = genstatus, 
+      y = index1) +
+  stat_binhex(colour = "grey85", na.rm  = TRUE) +     # outlines
+  scale_fill_gradientn(colors   = c("grey80","navyblue"), # fill color extremes
+                       name     = "Frequency",        # legend title
+                       na.value = NA) +               # color for count = 0
+  theme_bw()
+```
+
+#Multilevel Plots - Nested Level 
+```{r}
+newOBS08 %>% 
+  dplyr::filter(ethnilat %in% c(1, 2, 
+                              3, 4)) %>%  
+  ggplot(aes(x = genstatus,
+             y = index1))+
+  geom_count() +             # creates points, size by overplotted number
+  geom_smooth(method = "lm") +     # linear model (OLS) 
+  facet_wrap(~ ethnilat) +           # panels by school
+  theme_bw()
+
+#This figure displays four ethnic groups to illustrate the degree of ethnic group - to ethnic group variability in the association between genstatus and OBS score.
+```
+
+#Multilevel Plots - Nested Level 
+```{r}
+newOBS08 %>% 
+  ggplot(aes(x = genstatus,
+             y = index1)) +
+  geom_smooth(aes(group = ethnilat),
+              method = "lm",
+              se     = FALSE,      # do NOT want the SE bands
+              size   = 0.3) +   
+  geom_smooth(method = "lm",
+              se     = FALSE,
+              color = "red",       # do NOT want the SE bands
+              size   = 2) +        # make the lines thinner
+  theme_bw()
+```
+
+
+```{r}
+library(lme4)
+# Run random intercept model
+model <- lmer(index1 ~ genstatus + (1 | ethnilat), data=newOBS08)
+# View summary of results
+msummary(model)
+summary(model) ## Gen status is a significant differentiator for the OBS score (index1). 
+
+
+# Run random intercept and slope model
+model <- lmer(index1 ~ genstatus + (1 + genstatus | ethnilat), data=newOBS08)
+msummary(model)
+summary(model)
+
+##Notice that there is now a standard deviation on “genstatus” in the “Random Effects” section of the output. This is the value of τ or the standard deviation of u1j There is also a correlation between u0j and u1j Of -0.54. This is τ01
+
+# Run random slope model
+model <- lmer(index1 ~ genstatus + (0 + genstatus | ethnilat), data=newOBS08)
+summary(model)
+msummary(model)
+
+# Run random intercept and slope model
+model <- lmer(index1 ~ genstatus + (1 | ethnilat) + (0 + genstatus | ethnilat), data=newOBS08)
+msummary(model)
+summary(model)
+```
+
+## Fit the Model
+```{r}
+fit_read_0ml <- lme4::lmer(index1 ~ 1 + (1|ethnilat), 
+                           data = newOBS08,
+                           REML = FALSE)                  # fit via ML (not the default)
+
+fit_read_0re <- lme4::lmer(index1 ~ 1 + (1|ethnilat) , # fit = REML (the default)
+                           data = newOBS08,
+                           REML = TRUE)  
+
+```
+
+##Compare the two models to OLS:
+
+```{r}
+library(texreg)
+texreg::knitreg(list(fit_read_lm_0, 
+                     fit_read_0ml, 
+                     fit_read_0re),
+                custom.model.names = c("OLS", 
+                                       "MLM-ML", 
+                                       "MLM-REML"),
+                caption            = "MLM: NULL Model,two estimation methods",
+                caption.above      = TRUE,
+                single.row         = TRUE)
+
+```
+
+#Add genstatus as a fixed effects predictor
+
+```{r}
+fit_read_1ml <- lme4::lmer(index1 ~ genstatus + (1|ethnilat), 
+                           data = newOBS08,
+                           REML = FALSE)            # to compare fixed var sig
+
+fit_read_1re <- lme4::lmer(index1 ~ genstatus + (1|ethnilat), 
+                           data = newOBS08,
+                           REML = TRUE)             # for R-sq calcs
+texreg::knitreg(list(fit_read_0ml, 
+                     fit_read_1ml),
+                custom.model.names = c("Null", 
+                                       "w Pred"),
+                caption = "MLM: Investigate a Fixed GenStatus Predictor",
+                caption.above = TRUE,
+                digits = 4)
+```
+#Assess Significance of Effects
+
+```{r}
+anova(fit_read_0ml, fit_read_1ml)
+```
+
+```{r}
+#library(effects)
+effects::Effect(focal.predictors = c("genstatus"), 
+                mod = fit_read_1ml) %>% 
+  data.frame() %>% 
+  ggplot(aes(x = genstatus,
+             y = fit)) +
+  geom_ribbon(aes(ymin = lower,
+                  ymax = upper),
+                alpha = .3) +
+  geom_line() +
+  theme_bw()
+```
+
+The expected value of OBS Score is 129.83: For every unit increase in gen status (0 to 1), OBS score is expected to increase by 4.32. 
+
